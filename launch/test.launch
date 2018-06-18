@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+
+<launch>
+   <node pkg="a_star" type="a_star.py" name="a_star" output="screen"/>
+   <node pkg="rviz" type="rviz" name="rviz"/>
+
+</launch>
