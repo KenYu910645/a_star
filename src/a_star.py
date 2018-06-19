@@ -7,7 +7,7 @@ from visualization_msgs.msg import Marker
 from visualization_msgs.msg import MarkerArray
 import math
 import numpy as np
-
+import random as rd
 
 class A_STAR():
 
@@ -21,6 +21,8 @@ class A_STAR():
         self.GOAL = 867
         self.MAP_SIZE = 30 # 30 * 30 = 900 points
         self.is_finished = False
+        self.total_path = 0 # Record how long does the pathing path
+        self.current_node = self.START
 
         #----------------------------------Init set-------------------------------------#
         # closedset - include node that already estimate
@@ -32,11 +34,18 @@ class A_STAR():
         # Record relationship between parent and child node
         self.came_from = dict()
         # obstable that can't go through
+        #------------------------------------Init obstacle------------------------------#
         self.obstacle = list()
-        
+        '''cube obstacle'''
         #self.rec_obstacle(10, 10, 10, 10)
-        self.rec_obstacle(13, 18, 3 ,8)
-        self.rec_obstacle(18, 11, 10 ,3)
+        '''L type obstacle'''
+        #self.rec_obstacle(13, 18, 3 ,8)
+        #self.rec_obstacle(18, 11, 10 ,3)
+        '''Random obstacle'''
+        for i in range(4):
+            obst = self.rand_obst()
+            self.rec_obstacle(obst['x'], obst['y'],obst['heigh'],obst['width'])
+
         #--------------------------------Init score-------------------------------------#
         #f(n)=h(n)+g(n)
         self.g_score = np.ones(pow(self.MAP_SIZE,2)) # g(n)
@@ -73,11 +82,7 @@ class A_STAR():
                 self.markerArray.markers.append(marker)
         # Add obstacle 
         for i in self.obstacle:
-            self.markerArray.markers[i].color.r = 32/255.0
-            self.markerArray.markers[i].color.g = 36/255.0
-            self.markerArray.markers[i].color.b = 46/255.0
-        
-        
+            self.set_color(i,32,36,46)
         self.publisher.publish(self.markerArray)
         #------------------------------------------------------------------------------#
         rospy.loginfo("[A_STAR] Finish init")
@@ -86,8 +91,10 @@ class A_STAR():
         if len(self.openset) == 0:
             rospy.loginfo("nothing to estimate in openset")
             return 
-        x = self.lowest(self.f_score)#  x -  having the lowest f_score[] value in openset 
-        #if GOAL is reached 
+        x = self.lowest()#  x -  having the lowest f_score[] value in openset
+        self.current_node = x
+        print "Current node : ", x
+        #if GOAL is reached
         if x == self.GOAL:
             rospy.loginfo("arrive goal !!")
             self.is_finished = True
@@ -95,64 +102,79 @@ class A_STAR():
         
         self.openset.remove(x) # remove x from openset
         self.closedset.append(x) #add x to closedset
-        
         #Find neighbor of X 
-        for y in self.neighbor(x):  
+        for y in self.neighbor(x):
             if y in self.closedset: # if y is already closed
                 continue
             # Go to neighbor cost ONE
             
-            tentative_g_score = self.g_score[x] + 1 #dist_between(x,y)
+            tentative_g_score = self.g_score[x] + self.neighbor_dist(x,y)
             if (not y in self.openset) or (tentative_g_score < self.g_score[y]):
                 self.came_from[y] = x            #y is key, x is value//make y become child of X 
                 # calculate g(n), h(n), f(n)
                 self.g_score[y] = tentative_g_score
                 self.h_score[y] = self.goal_dis_est(y, self.GOAL)
                 self.f_score[y] = self.g_score[y] + self.h_score[y]
-                print "f_score[y]", self.f_score[y]
-            self.openset.append(y) # add y to openset
+                #print "f_score[y]", self.f_score[y]
+            if not y in self.openset:
+                self.openset.append(y) # add y to openset
     
+    def neighbor_dist(self,n1,n2):
+        '''
+        return distance between neighbor
+        Input: 
+        n1   -- neighbor 1
+        n2   -- neighbor 2
+        '''
+        delta_x = abs(n2%self.MAP_SIZE - n1%self.MAP_SIZE) 
+        delta_y = abs(n2/self.MAP_SIZE - n1/self.MAP_SIZE)
+
+        ans =  math.sqrt(pow(delta_x,2) + pow(delta_y,2))
+        print "neighbor_dist; ", ans
+        print "delta_y : " , n2
+        print "delta_x : " , n1 
+        return ans
+
     def draw(self):
-        # Draw START
-        self.markerArray.markers[self.START].color.b = 0.0
-        self.markerArray.markers[self.START].color.r = 0.0
-        self.markerArray.markers[self.START].color.g = 1.0
-        # Draw GOAL
-        self.markerArray.markers[self.GOAL].color.b = 0.0
-        self.markerArray.markers[self.GOAL].color.r = 1.0
-        self.markerArray.markers[self.GOAL].color.g = 0.0
+        # Draw START and GOAL
+        self.set_color(self.START,0,255,0)
+        self.set_color(self.GOAL,255,0,0)
         # Draw Cloesd set
         for i in self.closedset:
-            self.markerArray.markers[i].color.r = 130/255.0
-            self.markerArray.markers[i].color.g = 57/255.0
-            self.markerArray.markers[i].color.b = 53/255.0
+            self.set_color(i,130,57,53)
         # Draw Open set
         for i in self.openset:
-            self.markerArray.markers[i].color.r = 248/255.0
-            self.markerArray.markers[i].color.g = 147/255.0
-            self.markerArray.markers[i].color.b = 29/255.0
+            self.set_color(i,248,147,29)
+        # Draw current node estimated
+        self.set_color(self.current_node,0,255,0)
+        # Publish mark
         self.publisher.publish(self.markerArray)
 
-    def draw_path(self,current_node):
+    def draw_path(self, node):
         try:
-            self.markerArray.markers[current_node].color.r = 0.6
-            self.markerArray.markers[current_node].color.g = 1.0
-            self.markerArray.markers[current_node].color.b = 0.4
-            print "Path", self.came_from[current_node]
-            return self.draw_path(self.came_from[current_node])
+            self.set_color(node,0,255,0)
+            self.total_path += self.neighbor_dist(node, self.came_from[node])
+            return self.draw_path(self.came_from[node])
         except:
-            print "Finished"
             self.publisher.publish(self.markerArray)
             return
     
     def goal_dis_est(self, n, goal):
         '''
-        estimate the distance between 'n' and 'goal', return a interger.
+        estimate the distance between 'n' and 'goal'
         '''
+        # Manhattan
         #return (goal - n) % self.MAP_SIZE + (goal - n) / self.MAP_SIZE
-        return pow((goal - n) % self.MAP_SIZE,2) + pow((goal - n) / self.MAP_SIZE,2)
+        # Euclidean
+        #return pow((goal - n) % self.MAP_SIZE,2) + pow((goal - n) / self.MAP_SIZE,2)
+        return self.neighbor_dist(n,self.GOAL)
+        # Chebyshev
+        #if (goal - n) % self.MAP_SIZE > (goal - n) / self.MAP_SIZE:
+        #    return (goal - n) % self.MAP_SIZE
+        #else:
+        #    return (goal - n) / self.MAP_SIZE
 
-    def lowest (self, A):
+    def lowest (self):
         '''
         find the lowest score in the openSet, retrun index.
         Input: Array
@@ -164,7 +186,6 @@ class A_STAR():
             if self.f_score[i] < lowest_score:
                 ans = i
                 lowest_score = self.f_score[i]
-        print "Find lowest score in openset : ", ans
         return ans
 
     def neighbor(self, x):
@@ -172,33 +193,95 @@ class A_STAR():
         return neighborhood of x, as a List with 4 node.(up, down, right, left)
         '''
         ans = list()
-        # UP
-        if not x % self.MAP_SIZE == self.MAP_SIZE -1: # x is upper boundary - there's no neighbor upper.
-            ans.append(x+1)
-        # DOWN
-        if not x % self.MAP_SIZE == 0:# x is lower boundary - there's no neighbor lower.
-            ans.append(x-1)
-        # RIGHT
-        if not x / self.MAP_SIZE == self.MAP_SIZE -1: # x is right boundary - there's no neightbor easter
-            ans.append(x+30)
-        #LEFT
-        if not x / self.MAP_SIZE == 0:# x is right boundary - there's no neightbor easter
-            ans.append(x-30)
+        is_up_boundary    = True
+        is_low_boundary   = True
+        is_right_boundary = True
+        is_left_boundary  = True
         
-        # check obstacle!!!
+        #-------------------------State confirmation -------------------------#
+
+        if not x % self.MAP_SIZE == self.MAP_SIZE -1: # x is up boundary
+            is_up_boundary = False
+        if not x % self.MAP_SIZE == 0:# x is low boundary
+            is_low_boundary = False
+        if not x / self.MAP_SIZE == self.MAP_SIZE -1: # x is right boundary
+            is_right_boundary = False
+        if not x / self.MAP_SIZE == 0:# x is right boundary
+            is_left_boundary = False
+            
+        #--------------------------boundary check-----------------------------#
+        if not is_up_boundary:
+            # UP
+            ans.append(x+1)
+            if not is_right_boundary:
+                # UP-RIGHT
+                ans.append(x+1+self.MAP_SIZE)
+            if not is_left_boundary:
+                # UP-LEFT
+                ans.append(x+1-self.MAP_SIZE)        
+        if not is_low_boundary:
+            #DOWN
+            ans.append(x-1)
+            if not is_right_boundary:
+                # DOWN-RIGHT
+                ans.append(x-1+self.MAP_SIZE)
+            if not is_left_boundary:
+                # DOWN-LEFT
+                ans.append(x-1-self.MAP_SIZE)
+        if not is_right_boundary:
+            #RIGHT
+            ans.append(x+self.MAP_SIZE)
+        if not is_left_boundary:
+            #LEFT
+            ans.append(x-self.MAP_SIZE)
+        
+
+        #----------------------------- check obstacle!!!----------------------------------_#
+        ans_wihtout_obst = list()
         for i in ans:
-            if i in self.obstacle:
-                ans.remove(i)
+            if not i in self.obstacle:
+                ans_wihtout_obst.append(i)
+        return ans_wihtout_obst
+
+    def rand_obst(self):
+        '''
+        recreate random rectagle size, to assign as obstacle
+        '''
+        ans = dict()
+        ans['x'] = rd.randint(0,self.MAP_SIZE-1)
+        ans['y'] = rd.randint(0,self.MAP_SIZE-1)
+        ans['heigh'] = rd.randint(1,self.MAP_SIZE - ans['y'])
+        ans['width'] = rd.randint(1,self.MAP_SIZE - ans['x'])
         return ans
 
-    def rec_obstacle(self, x , y , height, width):
+
+    def rec_obstacle(self, x , y , heigh, width):
         # left-down point of rectangle
+        print "++++RECTANGLE OBSTACLE++++"
+        print "x : ", x
+        print "y : ", y
+        print "heigh : ", heigh
+        print "width : ", width
         LD_point = x*self.MAP_SIZE + y
-        for i in range(height):
+        for i in range(heigh):
             for j in range(width):
-                p = LD_point + i + j*self.MAP_SIZE
+                p = LD_point + (i) + (j)*self.MAP_SIZE
                 if not p in self.obstacle:
                     self.obstacle.append(p)
+
+    def set_color(self,n , r, g, b):
+        '''
+        Set color for markArray according to input value.
+        Input: 
+        n   -- which node to set color
+        r   -- red (0~255)
+        g   -- green (0~255)
+        b   -- blue (0~255)
+        '''
+        self.markerArray.markers[n].color.r = r/255.0
+        self.markerArray.markers[n].color.g = g/255.0
+        self.markerArray.markers[n].color.b = b/255.0
+
 
 def main(args):
     rospy.init_node('a_star', anonymous=True)
@@ -208,11 +291,16 @@ def main(args):
     a_star = A_STAR()
 
     #call at 10HZ
-    r = rospy.Rate(10)
+    r = rospy.Rate(40)
     while (not rospy.is_shutdown()) and (not a_star.is_finished):
         a_star.iteration()
         if a_star.is_finished:
             a_star.draw_path(a_star.GOAL)
+            print "------------------------- Path planning finished -----------------------------"
+            rospy.loginfo("Path length : %f ", a_star.total_path)
+            rospy.loginfo("Closeset size : %i", len(a_star.closedset))
+            rospy.loginfo("Exploration rate : %f percentage" , 100 * len(a_star.closedset) / float(pow(a_star.MAP_SIZE,2) - len(a_star.obstacle)))
+            rospy.loginfo("Exploration efficiency: %f percentage" , 100 * a_star.total_path / float(len(a_star.closedset)))
         else:
             a_star.draw()
         r.sleep()
