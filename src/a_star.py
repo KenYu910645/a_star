@@ -17,10 +17,11 @@ class A_STAR():
         '''
         self.publisher = rospy.Publisher('visualization_marker_array', MarkerArray,queue_size = 10)
         self.markerArray = MarkerArray()
-        self.START = 31
-        self.GOAL = 867
         self.MAP_SIZE = 30 # 30 * 30 = 900 points
-        self.is_finished = False
+        self.START = self.MAP_SIZE + 2
+        self.GOAL = pow(self.MAP_SIZE,2) - self.MAP_SIZE - 10
+        self.is_finished = False # Flag   -- Goal is arrived or not
+        self.is_reachable = True #Flag  -- Goal is reachable or not
         self.total_path = 0 # Record how long does the pathing path
         self.current_node = self.START
 
@@ -42,7 +43,7 @@ class A_STAR():
         #self.rec_obstacle(13, 18, 3 ,8)
         #self.rec_obstacle(18, 11, 10 ,3)
         '''Random obstacle'''
-        for i in range(4):
+        for i in range(4): # 4 obstacle
             obst = self.rand_obst()
             self.rec_obstacle(obst['x'], obst['y'],obst['heigh'],obst['width'])
 
@@ -88,8 +89,12 @@ class A_STAR():
         rospy.loginfo("[A_STAR] Finish init")
       
     def iteration(self):
+        '''
+        Time Loop
+        '''
         if len(self.openset) == 0:
-            rospy.loginfo("nothing to estimate in openset")
+            # Can't find a way to Goal 
+            self.is_reachable = False
             return 
         x = self.lowest()#  x -  having the lowest f_score[] value in openset
         self.current_node = x
@@ -130,12 +135,16 @@ class A_STAR():
         delta_y = abs(n2/self.MAP_SIZE - n1/self.MAP_SIZE)
 
         ans =  math.sqrt(pow(delta_x,2) + pow(delta_y,2))
-        print "neighbor_dist; ", ans
-        print "delta_y : " , n2
-        print "delta_x : " , n1 
+        # For testing
+        #print "neighbor_dist; ", ans
+        #print "delta_y : " , n2
+        #print "delta_x : " , n1 
         return ans
 
     def draw(self):
+        '''
+        Draw color dot on RVIZ
+        '''
         # Draw START and GOAL
         self.set_color(self.START,0,255,0)
         self.set_color(self.GOAL,255,0,0)
@@ -151,6 +160,9 @@ class A_STAR():
         self.publisher.publish(self.markerArray)
 
     def draw_path(self, node):
+        '''
+        Draw final path on RVIZ when reach goal 
+        '''
         try:
             self.set_color(node,0,255,0)
             self.total_path += self.neighbor_dist(node, self.came_from[node])
@@ -163,12 +175,13 @@ class A_STAR():
         '''
         estimate the distance between 'n' and 'goal'
         '''
-        # Manhattan
+        #### Manhattan
         #return (goal - n) % self.MAP_SIZE + (goal - n) / self.MAP_SIZE
-        # Euclidean
-        #return pow((goal - n) % self.MAP_SIZE,2) + pow((goal - n) / self.MAP_SIZE,2)
+
+        #### Euclidean
         return self.neighbor_dist(n,self.GOAL)
-        # Chebyshev
+        
+        #### Chebyshev
         #if (goal - n) % self.MAP_SIZE > (goal - n) / self.MAP_SIZE:
         #    return (goal - n) % self.MAP_SIZE
         #else:
@@ -285,14 +298,11 @@ class A_STAR():
 
 def main(args):
     rospy.init_node('a_star', anonymous=True)
-
-    #TODO load parameters here !
-    #a_star = A_STAR(param_dict)
     a_star = A_STAR()
 
     #call at 10HZ
-    r = rospy.Rate(40)
-    while (not rospy.is_shutdown()) and (not a_star.is_finished):
+    r = rospy.Rate(10)
+    while (not rospy.is_shutdown()) and (not a_star.is_finished) and (a_star.is_reachable):
         a_star.iteration()
         if a_star.is_finished:
             a_star.draw_path(a_star.GOAL)
@@ -301,6 +311,8 @@ def main(args):
             rospy.loginfo("Closeset size : %i", len(a_star.closedset))
             rospy.loginfo("Exploration rate : %f percentage" , 100 * len(a_star.closedset) / float(pow(a_star.MAP_SIZE,2) - len(a_star.obstacle)))
             rospy.loginfo("Exploration efficiency: %f percentage" , 100 * a_star.total_path / float(len(a_star.closedset)))
+        elif not a_star.is_reachable:
+            rospy.logerr("Nothing to estimate, Can't find way to goal")
         else:
             a_star.draw()
         r.sleep()
